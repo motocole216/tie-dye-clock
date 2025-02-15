@@ -11,9 +11,17 @@ class PomodoroTimer {
             longBreak: 15
         };
 
-        this.audioContext = null;
-        this.audioInitialized = false;
+        // Pre-load sounds for iOS
+        this.sounds = {
+            countdown: new Audio('countdown-sound.mp3'),
+            alarm: new Audio('countdown-sound.mp3')
+        };
 
+        // Initialize sounds for iOS
+        this.sounds.countdown.load();
+        this.sounds.alarm.load();
+        
+        this.audioEnabled = false;
         this.initializeElements();
         this.initializeEventListeners();
         this.initializeAudio();
@@ -27,24 +35,30 @@ class PomodoroTimer {
         this.pomodoroButton = document.getElementById('pomodoro');
         this.shortBreakButton = document.getElementById('shortBreak');
         this.longBreakButton = document.getElementById('longBreak');
-        this.countdownSound = document.getElementById('countdownSound');
     }
 
     initializeAudio() {
-        // Create audio context on first user interaction
-        const initAudioContext = () => {
-            if (!this.audioInitialized) {
-                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                this.audioInitialized = true;
-                // Remove the initialization listeners once audio is set up
-                document.removeEventListener('click', initAudioContext);
-                document.removeEventListener('touchstart', initAudioContext);
+        // Function to enable audio
+        const enableAudio = () => {
+            if (!this.audioEnabled) {
+                // Play and immediately pause to enable audio on iOS
+                this.sounds.countdown.play().then(() => {
+                    this.sounds.countdown.pause();
+                    this.sounds.countdown.currentTime = 0;
+                    this.audioEnabled = true;
+                }).catch(error => {
+                    console.log('Error initializing audio:', error);
+                });
+
+                // Remove listeners once audio is enabled
+                document.removeEventListener('touchstart', enableAudio);
+                document.removeEventListener('click', enableAudio);
             }
         };
 
-        // Initialize audio on user interaction
-        document.addEventListener('click', initAudioContext);
-        document.addEventListener('touchstart', initAudioContext);
+        // Add listeners for user interaction
+        document.addEventListener('touchstart', enableAudio);
+        document.addEventListener('click', enableAudio);
     }
 
     initializeEventListeners() {
@@ -107,34 +121,41 @@ class PomodoroTimer {
     }
 
     playCountdownSound() {
-        if (this.countdownSound && this.audioInitialized) {
-            // Create a new audio element for each play to handle rapid sound triggers
-            const sound = new Audio(this.countdownSound.src);
-            sound.play().catch(error => {
-                console.log('Error playing sound:', error);
-                // Attempt to resume audio context if suspended
-                if (this.audioContext && this.audioContext.state === 'suspended') {
-                    this.audioContext.resume();
-                }
-            });
+        if (this.audioEnabled) {
+            // Reset and play countdown sound
+            this.sounds.countdown.currentTime = 0;
+            const playPromise = this.sounds.countdown.play();
+            
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.log('Error playing countdown sound:', error);
+                });
+            }
         }
     }
 
     playAlarm() {
-        if (this.countdownSound && this.audioInitialized) {
-            const sound = new Audio(this.countdownSound.src);
-            sound.play().catch(error => {
-                console.log('Error playing sound:', error);
-                if (this.audioContext && this.audioContext.state === 'suspended') {
-                    this.audioContext.resume();
-                }
-            });
+        if (this.audioEnabled) {
+            // Reset and play alarm sound
+            this.sounds.alarm.currentTime = 0;
+            const playPromise = this.sounds.alarm.play();
+            
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.log('Error playing alarm sound:', error);
+                });
+            }
         }
-        // Use vibration API if available (mobile devices)
+        
+        // Use vibration API if available
         if (navigator.vibrate) {
             navigator.vibrate([200, 100, 200]);
         }
-        alert('Timer completed!');
+        
+        // Show alert after a small delay to allow sound to play
+        setTimeout(() => {
+            alert('Timer completed!');
+        }, 100);
     }
 }
 
