@@ -11,20 +11,14 @@ class PomodoroTimer {
             longBreak: 15
         };
 
-        // Pre-load sounds for iOS
-        this.sounds = {
-            countdown: new Audio('countdown-sound.mp3'),
-            alarm: new Audio('countdown-sound.mp3')
-        };
-
-        // Initialize sounds for iOS
-        this.sounds.countdown.load();
-        this.sounds.alarm.load();
+        // Audio setup
+        this.audioContext = null;
+        this.audioBuffer = null;
+        this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
         
-        this.audioEnabled = false;
         this.initializeElements();
         this.initializeEventListeners();
-        this.initializeAudio();
+        this.setupAudio();
     }
 
     initializeElements() {
@@ -37,31 +31,90 @@ class PomodoroTimer {
         this.longBreakButton = document.getElementById('longBreak');
     }
 
-    initializeAudio() {
-        // Function to enable audio
-        const enableAudio = () => {
-            if (!this.audioEnabled) {
-                // Play and immediately pause to enable audio on iOS
-                this.sounds.countdown.play().then(() => {
-                    this.sounds.countdown.pause();
-                    this.sounds.countdown.currentTime = 0;
-                    this.audioEnabled = true;
-                }).catch(error => {
-                    console.log('Error initializing audio:', error);
-                });
+    async setupAudio() {
+        try {
+            // Create audio context
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            this.audioContext = new AudioContext();
 
-                // Remove listeners once audio is enabled
-                document.removeEventListener('touchstart', enableAudio);
-                document.removeEventListener('click', enableAudio);
+            // Fetch the audio file
+            const response = await fetch('countdown-sound.mp3');
+            const arrayBuffer = await response.arrayBuffer();
+            
+            // Decode the audio file
+            this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+
+            // Setup unlock function for iOS
+            if (this.isIOS) {
+                this.unlockAudioForIOS();
             }
+        } catch (error) {
+            console.log('Error setting up audio:', error);
+        }
+    }
+
+    unlockAudioForIOS() {
+        const unlockiOS = () => {
+            // Create and start a silent buffer
+            const silentBuffer = this.audioContext.createBuffer(1, 1, 22050);
+            const source = this.audioContext.createBufferSource();
+            source.buffer = silentBuffer;
+            source.connect(this.audioContext.destination);
+            source.start(0);
+            source.stop(0);
+
+            // Remove the touch/click listeners
+            document.removeEventListener('touchstart', unlockiOS);
+            document.removeEventListener('touchend', unlockiOS);
+            document.removeEventListener('click', unlockiOS);
         };
 
-        // Add listeners for user interaction
-        document.addEventListener('touchstart', enableAudio);
-        document.addEventListener('click', enableAudio);
+        // Add event listeners for user interaction
+        document.addEventListener('touchstart', unlockiOS);
+        document.addEventListener('touchend', unlockiOS);
+        document.addEventListener('click', unlockiOS);
+    }
+
+    playSound() {
+        if (this.audioContext && this.audioBuffer) {
+            try {
+                // Resume audio context if it's suspended (iOS requirement)
+                if (this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+
+                // Create a new buffer source for each play
+                const source = this.audioContext.createBufferSource();
+                source.buffer = this.audioBuffer;
+                source.connect(this.audioContext.destination);
+                source.start(0);
+
+                // For iOS, also try to play a system sound
+                if (this.isIOS) {
+                    // Try to trigger system sound
+                    const dummy = new Audio();
+                    dummy.play().catch(() => {});
+                }
+            } catch (error) {
+                console.log('Error playing sound:', error);
+            }
+        }
     }
 
     initializeEventListeners() {
+        // Add touch event listeners for iOS
+        if (this.isIOS) {
+            const buttons = [this.startButton, this.pauseButton, this.resetButton,
+                           this.pomodoroButton, this.shortBreakButton, this.longBreakButton];
+            
+            buttons.forEach(button => {
+                button.addEventListener('touchend', (e) => {
+                    e.preventDefault(); // Prevent double-firing on iOS
+                    button.click();
+                });
+            });
+        }
+
         this.startButton.addEventListener('click', () => this.start());
         this.pauseButton.addEventListener('click', () => this.pause());
         this.resetButton.addEventListener('click', () => this.reset());
@@ -79,6 +132,11 @@ class PomodoroTimer {
 
     start() {
         if (!this.isRunning) {
+            // Try to resume audio context when starting timer
+            if (this.audioContext && this.audioContext.state === 'suspended') {
+                this.audioContext.resume();
+            }
+
             this.isRunning = true;
             this.timerId = setInterval(() => {
                 this.timeLeft--;
@@ -86,7 +144,7 @@ class PomodoroTimer {
                 
                 // Play countdown sound every 60 seconds
                 if (this.timeLeft > 0 && this.timeLeft % 60 === 0) {
-                    this.playCountdownSound();
+                    this.playSound();
                 }
                 
                 if (this.timeLeft === 0) {
@@ -120,32 +178,9 @@ class PomodoroTimer {
         document.getElementById(mode).classList.add('active');
     }
 
-    playCountdownSound() {
-        if (this.audioEnabled) {
-            // Reset and play countdown sound
-            this.sounds.countdown.currentTime = 0;
-            const playPromise = this.sounds.countdown.play();
-            
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.log('Error playing countdown sound:', error);
-                });
-            }
-        }
-    }
-
     playAlarm() {
-        if (this.audioEnabled) {
-            // Reset and play alarm sound
-            this.sounds.alarm.currentTime = 0;
-            const playPromise = this.sounds.alarm.play();
-            
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.log('Error playing alarm sound:', error);
-                });
-            }
-        }
+        // Play sound
+        this.playSound();
         
         // Use vibration API if available
         if (navigator.vibrate) {
