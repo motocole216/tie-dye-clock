@@ -23,6 +23,7 @@ class PomodoroTimer {
         this.pomodoroButton = document.getElementById('pomodoro');
         this.shortBreakButton = document.getElementById('shortBreak');
         this.longBreakButton = document.getElementById('longBreak');
+        this.countdownSound = document.getElementById('countdownSound');
     }
 
     initializeEventListeners() {
@@ -47,6 +48,11 @@ class PomodoroTimer {
             this.timerId = setInterval(() => {
                 this.timeLeft--;
                 this.updateDisplay();
+                
+                // Play countdown sound every 60 seconds
+                if (this.timeLeft > 0 && this.timeLeft % 60 === 0) {
+                    this.playCountdownSound();
+                }
                 
                 if (this.timeLeft === 0) {
                     this.pause();
@@ -79,8 +85,18 @@ class PomodoroTimer {
         document.getElementById(mode).classList.add('active');
     }
 
+    playCountdownSound() {
+        if (this.countdownSound) {
+            this.countdownSound.currentTime = 0; // Reset the sound to start
+            this.countdownSound.play().catch(error => console.log('Error playing sound:', error));
+        }
+    }
+
     playAlarm() {
-        // You can add a sound effect here
+        if (this.countdownSound) {
+            this.countdownSound.currentTime = 0;
+            this.countdownSound.play().catch(error => console.log('Error playing sound:', error));
+        }
         alert('Timer completed!');
     }
 }
