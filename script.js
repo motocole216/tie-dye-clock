@@ -11,8 +11,12 @@ class PomodoroTimer {
             longBreak: 15
         };
 
+        this.audioContext = null;
+        this.audioInitialized = false;
+
         this.initializeElements();
         this.initializeEventListeners();
+        this.initializeAudio();
     }
 
     initializeElements() {
@@ -24,6 +28,23 @@ class PomodoroTimer {
         this.shortBreakButton = document.getElementById('shortBreak');
         this.longBreakButton = document.getElementById('longBreak');
         this.countdownSound = document.getElementById('countdownSound');
+    }
+
+    initializeAudio() {
+        // Create audio context on first user interaction
+        const initAudioContext = () => {
+            if (!this.audioInitialized) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.audioInitialized = true;
+                // Remove the initialization listeners once audio is set up
+                document.removeEventListener('click', initAudioContext);
+                document.removeEventListener('touchstart', initAudioContext);
+            }
+        };
+
+        // Initialize audio on user interaction
+        document.addEventListener('click', initAudioContext);
+        document.addEventListener('touchstart', initAudioContext);
     }
 
     initializeEventListeners() {
@@ -86,16 +107,32 @@ class PomodoroTimer {
     }
 
     playCountdownSound() {
-        if (this.countdownSound) {
-            this.countdownSound.currentTime = 0; // Reset the sound to start
-            this.countdownSound.play().catch(error => console.log('Error playing sound:', error));
+        if (this.countdownSound && this.audioInitialized) {
+            // Create a new audio element for each play to handle rapid sound triggers
+            const sound = new Audio(this.countdownSound.src);
+            sound.play().catch(error => {
+                console.log('Error playing sound:', error);
+                // Attempt to resume audio context if suspended
+                if (this.audioContext && this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+            });
         }
     }
 
     playAlarm() {
-        if (this.countdownSound) {
-            this.countdownSound.currentTime = 0;
-            this.countdownSound.play().catch(error => console.log('Error playing sound:', error));
+        if (this.countdownSound && this.audioInitialized) {
+            const sound = new Audio(this.countdownSound.src);
+            sound.play().catch(error => {
+                console.log('Error playing sound:', error);
+                if (this.audioContext && this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+            });
+        }
+        // Use vibration API if available (mobile devices)
+        if (navigator.vibrate) {
+            navigator.vibrate([200, 100, 200]);
         }
         alert('Timer completed!');
     }
