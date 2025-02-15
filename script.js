@@ -11,14 +11,19 @@ class PomodoroTimer {
             longBreak: 15
         };
 
-        // Audio setup
-        this.audioContext = null;
-        this.audioBuffer = null;
-        this.isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        // Create a pool of audio elements for Safari
+        this.audioPool = Array.from({ length: 3 }, () => {
+            const audio = new Audio();
+            audio.src = 'countdown-sound.mp3';
+            return audio;
+        });
+        
+        this.currentAudioIndex = 0;
+        this.isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         
         this.initializeElements();
         this.initializeEventListeners();
-        this.setupAudio();
+        this.initializeAudio();
     }
 
     initializeElements() {
@@ -31,85 +36,73 @@ class PomodoroTimer {
         this.longBreakButton = document.getElementById('longBreak');
     }
 
-    async setupAudio() {
-        try {
-            // Create audio context
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            this.audioContext = new AudioContext();
+    initializeAudio() {
+        // Pre-load all audio elements
+        this.audioPool.forEach(audio => {
+            audio.load();
+            // Set audio to low volume to enable playback on Safari
+            audio.volume = 0.1;
+        });
 
-            // Fetch the audio file
-            const response = await fetch('countdown-sound.mp3');
-            const arrayBuffer = await response.arrayBuffer();
-            
-            // Decode the audio file
-            this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+        // Function to enable audio on user interaction
+        const enableAudio = () => {
+            // Try to play all audio elements
+            this.audioPool.forEach(audio => {
+                audio.play().then(() => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    // Reset volume to full after enabling
+                    audio.volume = 1;
+                }).catch(error => {
+                    console.log('Error enabling audio:', error);
+                });
+            });
 
-            // Setup unlock function for iOS
-            if (this.isIOS) {
-                this.unlockAudioForIOS();
-            }
-        } catch (error) {
-            console.log('Error setting up audio:', error);
-        }
-    }
-
-    unlockAudioForIOS() {
-        const unlockiOS = () => {
-            // Create and start a silent buffer
-            const silentBuffer = this.audioContext.createBuffer(1, 1, 22050);
-            const source = this.audioContext.createBufferSource();
-            source.buffer = silentBuffer;
-            source.connect(this.audioContext.destination);
-            source.start(0);
-            source.stop(0);
-
-            // Remove the touch/click listeners
-            document.removeEventListener('touchstart', unlockiOS);
-            document.removeEventListener('touchend', unlockiOS);
-            document.removeEventListener('click', unlockiOS);
+            // Remove listeners after first interaction
+            document.removeEventListener('touchstart', enableAudio);
+            document.removeEventListener('click', enableAudio);
         };
 
-        // Add event listeners for user interaction
-        document.addEventListener('touchstart', unlockiOS);
-        document.addEventListener('touchend', unlockiOS);
-        document.addEventListener('click', unlockiOS);
+        // Add listeners for user interaction
+        document.addEventListener('touchstart', enableAudio);
+        document.addEventListener('click', enableAudio);
     }
 
     playSound() {
-        if (this.audioContext && this.audioBuffer) {
-            try {
-                // Resume audio context if it's suspended (iOS requirement)
-                if (this.audioContext.state === 'suspended') {
-                    this.audioContext.resume();
-                }
+        // Get the next audio element from the pool
+        const audio = this.audioPool[this.currentAudioIndex];
+        
+        // Reset the audio element
+        audio.currentTime = 0;
+        audio.volume = 1;
 
-                // Create a new buffer source for each play
-                const source = this.audioContext.createBufferSource();
-                source.buffer = this.audioBuffer;
-                source.connect(this.audioContext.destination);
-                source.start(0);
-
-                // For iOS, also try to play a system sound
-                if (this.isIOS) {
-                    // Try to trigger system sound
-                    const dummy = new Audio();
-                    dummy.play().catch(() => {});
-                }
-            } catch (error) {
+        // Play the sound
+        const playPromise = audio.play();
+        
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
                 console.log('Error playing sound:', error);
-            }
+                // If play fails, try to re-enable audio
+                if (this.isSafari) {
+                    audio.load();
+                    audio.play().catch(() => {});
+                }
+            });
         }
+
+        // Move to the next audio element in the pool
+        this.currentAudioIndex = (this.currentAudioIndex + 1) % this.audioPool.length;
     }
 
     initializeEventListeners() {
-        // Add touch event listeners for iOS
-        if (this.isIOS) {
+        // Add touch event listeners for Safari
+        if (this.isSafari) {
             const buttons = [this.startButton, this.pauseButton, this.resetButton,
                            this.pomodoroButton, this.shortBreakButton, this.longBreakButton];
             
             buttons.forEach(button => {
                 button.addEventListener('touchend', (e) => {
-                    e.preventDefault(); // Prevent double-firing on iOS
+                    e.preventDefault(); // Prevent double-firing
                     button.click();
                 });
             });
@@ -132,11 +125,6 @@ class PomodoroTimer {
 
     start() {
         if (!this.isRunning) {
-            // Try to resume audio context when starting timer
-            if (this.audioContext && this.audioContext.state === 'suspended') {
-                this.audioContext.resume();
-            }
-
             this.isRunning = true;
             this.timerId = setInterval(() => {
                 this.timeLeft--;
